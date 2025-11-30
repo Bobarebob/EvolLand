@@ -419,9 +419,9 @@
         <div class="login-box">
             <h2>🌍 Welcome to the Evolution of Terrestrial Life</h2>
             <p>Please enter your information to begin the interactive journey</p>
-            <input type="text" id="studentName" placeholder="Enter your full name" required>
-            <input type="text" id="studentID" placeholder="Enter your Student ID Number (7 digits)" required>
-            <input type="password" id="studentPassword" placeholder="Enter class password" required>
+            <input type="text" id="studentName" required>
+            <input type="text" id="studentID" required>
+            <input type="password" id="studentPassword" required>
             <div id="loginError" style="color: #ff6b6b; margin-top: 10px; display: none; text-align: center;"></div>
             <button onclick="startQuiz()">Start Journey</button>
         </div>
@@ -433,6 +433,11 @@
         <div class="student-info">
             <div class="student-name">Student: <span id="displayName"></span></div>
             <div class="student-score">Score: <span id="displayScore">0</span> / <span id="totalQuestions">10</span></div>
+            <div class="student-attempt" id="attemptDisplay" style="display: none;">Attempt: <span id="attemptNumber">1</span></div>
+            <div class="student-timer" id="timerDisplay" style="display: none;">
+                <span id="timeWarningMessage" style="color: #ff0000; margin-right: 10px; font-weight: bold; display: none;"></span>
+                Time: <span id="timeRemaining"></span>
+            </div>
         </div>
 
 
@@ -1274,8 +1279,30 @@
         firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
 
-        // Password for the class
-        const CLASS_PASSWORD = "feather";
+        // Password for the quiz (hardcoded)
+        const QUIZ_PASSWORD = "feather";
+
+        // Quiz configuration (loaded from Firebase)
+        let quizConfig = {
+            className: null,
+            quizName: null,
+            databaseId: null,
+            loginDescriptors: {
+                name: 'Student Name',
+                id: 'Student ID',
+                pass: 'Quiz Password'
+            },
+            restrictions: {
+                timeLimit: 0,
+                lowTimeWarning: 0,
+                startDate: '',
+                startTime: '',
+                stopDate: '',
+                stopTime: '',
+                attemptsAllowed: 0,
+                pointsPerQuestion: 'equal'
+            }
+        };
 
         // Student data
         let studentData = {
@@ -1286,8 +1313,82 @@
             answers: {},
             score: 0
         };
+        
+        // Timer variables
+        let timerInterval = null;
+        let timeRemainingSeconds = 0;
+        let warningShown = {3: false, 2: false, 1: false};
+        
+        // Load quiz configuration from Firebase on page load
+        window.addEventListener('load', async () => {
+            try {
+                // Query for active database by password
+                const dbSnapshot = await db.collection('databases')
+                    .where('password', '==', QUIZ_PASSWORD)
+                    .where('active', '==', true)
+                    .limit(1)
+                    .get();
+                
+                if (dbSnapshot.empty) {
+                    console.error('No active database found for this quiz password');
+                    document.getElementById('loginError').textContent = 'Quiz is not currently active. Please contact your instructor.';
+                    document.getElementById('loginError').style.display = 'block';
+                    return;
+                }
+                
+                const activeDb = dbSnapshot.docs[0].data();
+                quizConfig.className = activeDb.className;
+                quizConfig.quizName = activeDb.quizName;
+                quizConfig.databaseId = dbSnapshot.docs[0].id;
+                
+                console.log('Quiz configuration loaded:', quizConfig);
+                
+                // Load quiz settings (login descriptors and restrictions)
+                const settingsDoc = await db.collection('quizSettings')
+                    .doc(`${quizConfig.className}_${quizConfig.quizName}`)
+                    .get();
+                
+                if (settingsDoc.exists) {
+                    const settings = settingsDoc.data();
+                    console.log('Settings document found:', settings);
+                    if (settings.loginDescriptors) {
+                        quizConfig.loginDescriptors = settings.loginDescriptors;
+                        // Update login form placeholders
+                        document.getElementById('studentName').placeholder = settings.loginDescriptors.name || 'Enter your full name';
+                        document.getElementById('studentID').placeholder = settings.loginDescriptors.id || 'Enter your Student ID Number (7 digits)';
+                        document.getElementById('studentPassword').placeholder = settings.loginDescriptors.pass || 'Enter class password';
+                        console.log('Login descriptors loaded:', settings.loginDescriptors);
+                    } else {
+                        console.log('No loginDescriptors in settings document');
+                        // Set default placeholders
+                        document.getElementById('studentName').placeholder = 'Enter your full name';
+                        document.getElementById('studentID').placeholder = 'Enter your Student ID Number (7 digits)';
+                        document.getElementById('studentPassword').placeholder = 'Enter class password';
+                    }
+                    if (settings.restrictions) {
+                        quizConfig.restrictions = settings.restrictions;
+                        console.log('Quiz restrictions loaded:', quizConfig.restrictions);
+                    }
+                    if (settings.idValidation) {
+                        quizConfig.idValidation = settings.idValidation;
+                        console.log('ID validation loaded:', quizConfig.idValidation);
+                    }
+                } else {
+                    console.log('No settings document found for:', `${quizConfig.className}_${quizConfig.quizName}`);
+                    // Set default placeholders if no settings document exists
+                    document.getElementById('studentName').placeholder = 'Enter your full name';
+                    document.getElementById('studentID').placeholder = 'Enter your Student ID Number (7 digits)';
+                    document.getElementById('studentPassword').placeholder = 'Enter class password';
+                }
+                
+            } catch (error) {
+                console.error('Error loading quiz configuration:', error);
+                document.getElementById('loginError').textContent = 'Error loading quiz settings: ' + error.message;
+                document.getElementById('loginError').style.display = 'block';
+            }
+        });
 
-        function startQuiz() {
+        async function startQuiz() {
             const name = document.getElementById('studentName').value.trim();
             const studentID = document.getElementById('studentID').value.trim();
             const password = document.getElementById('studentPassword').value;
@@ -1301,16 +1402,99 @@
                 return;
             }
             
-            if (!studentID || !studentID.match(/^\d{7}$/)) {
-                errorDiv.textContent = 'Student ID must be exactly 7 digits (e.g., B00123456)';
+            // Validate Student ID based on configured rules
+            if (!studentID) {
+                errorDiv.textContent = 'Please enter your Student ID';
                 errorDiv.style.display = 'block';
                 return;
             }
             
-            if (password !== CLASS_PASSWORD) {
+            if (quizConfig.idValidation && quizConfig.idValidation.type !== 'none') {
+                const validation = quizConfig.idValidation;
+                let isValid = false;
+                let errorMessage = 'Invalid Student ID format';
+                
+                if (validation.type === 'digits') {
+                    const numDigits = parseInt(validation.value);
+                    const regex = new RegExp(`^\\d{${numDigits}}$`);
+                    isValid = regex.test(studentID);
+                    errorMessage = `Student ID must be exactly ${numDigits} digits`;
+                } else if (validation.type === 'startsWith') {
+                    isValid = studentID.startsWith(validation.value);
+                    errorMessage = `Student ID must start with "${validation.value}"`;
+                } else if (validation.type === 'regex') {
+                    try {
+                        const regex = new RegExp(validation.value);
+                        isValid = regex.test(studentID);
+                        errorMessage = 'Student ID does not match required format';
+                    } catch (e) {
+                        console.error('Invalid regex pattern:', e);
+                        isValid = true; // Allow if regex is invalid
+                    }
+                }
+                
+                if (!isValid) {
+                    errorDiv.textContent = errorMessage;
+                    errorDiv.style.display = 'block';
+                    return;
+                }
+            }
+            
+            if (password !== QUIZ_PASSWORD) {
                 errorDiv.textContent = 'Incorrect password. Please contact your instructor.';
                 errorDiv.style.display = 'block';
                 return;
+            }
+            
+            // Check if quiz configuration is loaded
+            if (!quizConfig.className || !quizConfig.quizName) {
+                errorDiv.textContent = 'Quiz configuration not loaded. Please refresh the page.';
+                errorDiv.style.display = 'block';
+                return;
+            }
+            
+            // Enforce date/time restrictions
+            const now = new Date();
+            if (quizConfig.restrictions.startDate && quizConfig.restrictions.startTime) {
+                const startDateTime = new Date(`${quizConfig.restrictions.startDate}T${quizConfig.restrictions.startTime}`);
+                if (now < startDateTime) {
+                    errorDiv.textContent = `Quiz is not available yet. It will open on ${quizConfig.restrictions.startDate} at ${quizConfig.restrictions.startTime}.`;
+                    errorDiv.style.display = 'block';
+                    return;
+                }
+            }
+            
+            if (quizConfig.restrictions.stopDate && quizConfig.restrictions.stopTime) {
+                const stopDateTime = new Date(`${quizConfig.restrictions.stopDate}T${quizConfig.restrictions.stopTime}`);
+                if (now > stopDateTime) {
+                    errorDiv.textContent = `Quiz has closed. The deadline was ${quizConfig.restrictions.stopDate} at ${quizConfig.restrictions.stopTime}.`;
+                    errorDiv.style.display = 'block';
+                    return;
+                }
+            }
+            
+            // Check number of attempts
+            if (quizConfig.restrictions.attemptsAllowed > 0) {
+                try {
+                    const attemptsSnapshot = await db.collection('students')
+                        .where('studentID', '==', studentID)
+                        .where('quizPassword', '==', QUIZ_PASSWORD)
+                        .get();
+                    
+                    const attemptNumber = attemptsSnapshot.size + 1;
+                    
+                    if (attemptsSnapshot.size >= quizConfig.restrictions.attemptsAllowed) {
+                        errorDiv.textContent = `You have already used all ${quizConfig.restrictions.attemptsAllowed} attempt(s) for this quiz.`;
+                        errorDiv.style.display = 'block';
+                        return;
+                    }
+                    
+                    // Display attempt number
+                    document.getElementById('attemptNumber').textContent = attemptNumber;
+                    document.getElementById('attemptDisplay').style.display = 'block';
+                } catch (error) {
+                    console.error('Error checking attempts:', error);
+                }
             }
             
             studentData.name = name;
@@ -1321,6 +1505,10 @@
             db.collection('students').doc(studentData.sessionId).set({
                 name: studentData.name,
                 studentID: studentData.studentID,
+                className: quizConfig.className,
+                quizName: quizConfig.quizName,
+                quizPassword: QUIZ_PASSWORD,
+                databaseId: quizConfig.databaseId,
                 startTime: studentData.startTime,
                 answers: {},
                 score: 0,
@@ -1330,7 +1518,20 @@
                 document.getElementById('loginScreen').classList.add('hidden');
                 document.getElementById('mainContent').style.display = 'block';
                 document.getElementById('displayName').textContent = name + ' (' + studentData.studentID + ')';
-                document.getElementById('totalQuestions').textContent = '10';
+                
+                // Set total points based on points per question
+                const pointsPerQuestion = parseFloat(quizConfig.restrictions.pointsPerQuestion) || 1.0;
+                const totalPoints = 10 * pointsPerQuestion;
+                if (pointsPerQuestion === 0.5) {
+                    document.getElementById('totalQuestions').textContent = totalPoints.toFixed(1);
+                } else {
+                    document.getElementById('totalQuestions').textContent = totalPoints;
+                }
+                
+                // Start timer if time limit is set
+                if (quizConfig.restrictions.timeLimit > 0) {
+                    startTimer(quizConfig.restrictions.timeLimit);
+                }
             }).catch((error) => {
                 console.error('Error starting session:', error);
                 errorDiv.textContent = 'Error connecting to database: ' + error.message;
@@ -1462,8 +1663,15 @@
                 };
                 
                 if (isCorrect) {
-                    studentData.score++;
-                    document.getElementById('displayScore').textContent = studentData.score;
+                    const pointsPerQuestion = parseFloat(quizConfig.restrictions.pointsPerQuestion) || 1.0;
+                    studentData.score += pointsPerQuestion;
+                    
+                    // Format score display based on points per question
+                    if (pointsPerQuestion === 0.5) {
+                        document.getElementById('displayScore').textContent = studentData.score.toFixed(1);
+                    } else {
+                        document.getElementById('displayScore').textContent = Math.round(studentData.score);
+                    }
                 }
                 
                 // Update Firebase
@@ -1506,6 +1714,82 @@
                     feedbackDiv.innerHTML = '✗ Incorrect. ' + question.explanation;
                 }
             }
+        }
+        
+        // Timer functions
+        function startTimer(minutes) {
+            timeRemainingSeconds = minutes * 60;
+            document.getElementById('timerDisplay').style.display = 'block';
+            updateTimerDisplay();
+            
+            timerInterval = setInterval(() => {
+                timeRemainingSeconds--;
+                updateTimerDisplay();
+                
+                // Check for warnings - trigger at X:01 to show "X minutes left"
+                if (timeRemainingSeconds === 181 && !warningShown[3]) {
+                    showTimeWarning(3);
+                    warningShown[3] = true;
+                } else if (timeRemainingSeconds === 121 && !warningShown[2]) {
+                    showTimeWarning(2);
+                    warningShown[2] = true;
+                } else if (timeRemainingSeconds === 61 && !warningShown[1]) {
+                    showTimeWarning(1);
+                    warningShown[1] = true;
+                }
+                
+                // Auto-submit when time runs out
+                if (timeRemainingSeconds <= 0) {
+                    clearInterval(timerInterval);
+                    autoSubmitQuiz();
+                }
+            }, 1000);
+        }
+        
+        function updateTimerDisplay() {
+            const minutes = Math.floor(timeRemainingSeconds / 60);
+            const seconds = timeRemainingSeconds % 60;
+            const timeString = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+            
+            const timeElement = document.getElementById('timeRemaining');
+            timeElement.textContent = timeString;
+        }
+        
+        function showTimeWarning(minutes) {
+            const warningElement = document.getElementById('timeWarningMessage');
+            
+            // Show warning message
+            if (minutes === 3) {
+                warningElement.textContent = 'Three minutes left';
+            } else if (minutes === 2) {
+                warningElement.textContent = 'Two minutes left';
+            } else if (minutes === 1) {
+                warningElement.textContent = 'One minute left';
+            }
+            
+            warningElement.style.display = 'inline';
+            
+            // Hide after 5 seconds
+            setTimeout(() => {
+                warningElement.style.display = 'none';
+            }, 5000);
+        }
+        
+        function autoSubmitQuiz() {
+            // Mark quiz as completed
+            db.collection('students').doc(studentData.sessionId).update({
+                completed: true,
+                completedTime: firebase.firestore.Timestamp.now(),
+                autoSubmitted: true
+            }).catch(e => console.log(e));
+            
+            // Navigate to final score slide
+            document.getElementById('finalScore').textContent = studentData.score;
+            currentSlide = 11;
+            updateSlideDisplay();
+            updateTimelineIndicator();
+            
+            alert('Time is up! Your quiz has been automatically submitted.');
         }
 
     </script>
