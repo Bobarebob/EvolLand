@@ -1265,7 +1265,8 @@
 
     
     <script>
-        // Firebase Configuration - REPLACE WITH YOUR CONFIG
+        // VERSION: 2025-11-30-TIMER-FIX
+        // Firebase configuration - REPLACE WITH YOUR CONFIG
         const firebaseConfig = {
             apiKey: "AIzaSyApEcj1Gt_AgK9853JGWsyPuWuX1RyRQQA",
             authDomain: "astronomy-course.firebaseapp.com",
@@ -1582,7 +1583,18 @@
                 }
                 currentSlide = 11;
                 updateSlideDisplay();
-                updateTimelineIndicator();
+                // updateTimelineIndicator(); // Function doesn't exist, removed to prevent error
+                // Stop the timer when quiz is complete
+                console.log('Quiz complete - stopping timer. timerInterval:', timerInterval);
+                if (timerInterval) {
+                    clearInterval(timerInterval);
+                    timerInterval = null;
+                }
+                // Always hide timer display
+                const timerDisplay = document.getElementById('timerDisplay');
+                if (timerDisplay) {
+                    timerDisplay.style.display = 'none';
+                }
                 return;
             }
             currentSlide += direction;
@@ -1809,7 +1821,13 @@
             }
             currentSlide = 11;
             updateSlideDisplay();
-            updateTimelineIndicator();
+            // updateTimelineIndicator(); // Function doesn't exist, removed to prevent error
+            
+            // Hide timer display
+            const timerDisplay = document.getElementById('timerDisplay');
+            if (timerDisplay) {
+                timerDisplay.style.display = 'none';
+            }
             
             alert('Time is up! Your quiz has been automatically submitted.');
         }
