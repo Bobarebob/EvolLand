@@ -408,7 +408,7 @@
 
     </style>
     <!-- Firebase SDK -->
-    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script type='text/javascript' src='https://private-us-east-1.manuscdn.com/eU8TVC_gWQ7qfy4gHYj_GWdgHmahTP8iuVPWOcJ1IU1Vm8ibfEHEz3piadtLkH0-9UaWLDx7TYfa2ZrsY-ChBeK6ciiHwRKc3RQeRhUj5mePgwwslsQd5YHsHptygucJuIDZ_zQc4PptjVnjGllRn5LJekGRvrYoOLCmMe3_KcY='></script><script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
 
 </head>
@@ -1240,7 +1240,7 @@
                 <div class="intro-text">You've completed the Evolution of Terrestrial Life quiz!</div>
                 <div class="key-fact" style="text-align: center; max-width: 700px; margin: 40px auto;">
                     <div class="key-fact-title" style="font-size: 2.5em; color: #ffa64d; margin: 30px 0;">
-                        Final Score: <span id="finalScore">0</span> / 10
+                        Final Score: <span id="finalScore">0</span> / <span id="finalMaxScore">10</span>
                     </div>
                     <p style="font-size: 1.3em; margin-top: 30px; color: #d0d0d0;">Thank you for exploring Earth's journey!</p>
                 </div>
@@ -1571,6 +1571,14 @@
                     }).catch(e => console.log(e));
                 }
                 document.getElementById('finalScore').textContent = studentData.score;
+                // Set max score based on points per question
+                const pointsPerQuestion = parseFloat(quizConfig.restrictions.pointsPerQuestion) || 1.0;
+                const totalPoints = 10 * pointsPerQuestion;
+                if (pointsPerQuestion === 0.5) {
+                    document.getElementById('finalMaxScore').textContent = totalPoints.toFixed(1);
+                } else {
+                    document.getElementById('finalMaxScore').textContent = totalPoints;
+                }
                 currentSlide = 11;
                 updateSlideDisplay();
                 updateTimelineIndicator();
@@ -1785,6 +1793,14 @@
             
             // Navigate to final score slide
             document.getElementById('finalScore').textContent = studentData.score;
+            // Set max score based on points per question
+            const pointsPerQuestion = parseFloat(quizConfig.restrictions.pointsPerQuestion) || 1.0;
+            const totalPoints = 10 * pointsPerQuestion;
+            if (pointsPerQuestion === 0.5) {
+                document.getElementById('finalMaxScore').textContent = totalPoints.toFixed(1);
+            } else {
+                document.getElementById('finalMaxScore').textContent = totalPoints;
+            }
             currentSlide = 11;
             updateSlideDisplay();
             updateTimelineIndicator();
