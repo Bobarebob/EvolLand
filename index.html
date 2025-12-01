@@ -408,7 +408,7 @@
 
     </style>
     <!-- Firebase SDK -->
-    <script type='text/javascript' src='https://private-us-east-1.manuscdn.com/eU8TVC_gWQ7qfy4gHYj_GWdgHmahTP8iuVPWOcJ1IU1Vm8ibfEHEz3piadtLkH0-9UaWLDx7TYfa2ZrsY-ChBeK6ciiHwRKc3RQeRhUj5mePgwwslsQd5YHsHptygucJuIDZ_zQc4PptjVnjGllRn5LJekGRvrYoOLCmMe3_KcY='></script><script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
 
 </head>
@@ -1317,6 +1317,7 @@
         // Timer variables
         let timerInterval = null;
         let timeRemainingSeconds = 0;
+        let timerEndTime = null; // Timestamp when timer should end
         let warningShown = {3: false, 2: false, 1: false};
         
         // Load quiz configuration from Firebase on page load
@@ -1724,24 +1725,29 @@
             }
         }
         
-        // Timer functions
+        // Timer functions - Uses timestamp-based calculation to work on iOS/mobile
         function startTimer(minutes) {
-            timeRemainingSeconds = minutes * 60;
+            // Calculate end time as a timestamp
+            timerEndTime = Date.now() + (minutes * 60 * 1000);
             document.getElementById('timerDisplay').style.display = 'block';
             updateTimerDisplay();
             
             timerInterval = setInterval(() => {
-                timeRemainingSeconds--;
+                // Calculate remaining time based on current time vs end time
+                const now = Date.now();
+                const remainingMs = timerEndTime - now;
+                timeRemainingSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
+                
                 updateTimerDisplay();
                 
                 // Check for warnings - trigger at X:01 to show "X minutes left"
-                if (timeRemainingSeconds === 181 && !warningShown[3]) {
+                if (timeRemainingSeconds <= 181 && timeRemainingSeconds > 179 && !warningShown[3]) {
                     showTimeWarning(3);
                     warningShown[3] = true;
-                } else if (timeRemainingSeconds === 121 && !warningShown[2]) {
+                } else if (timeRemainingSeconds <= 121 && timeRemainingSeconds > 119 && !warningShown[2]) {
                     showTimeWarning(2);
                     warningShown[2] = true;
-                } else if (timeRemainingSeconds === 61 && !warningShown[1]) {
+                } else if (timeRemainingSeconds <= 61 && timeRemainingSeconds > 59 && !warningShown[1]) {
                     showTimeWarning(1);
                     warningShown[1] = true;
                 }
